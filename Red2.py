@@ -14,14 +14,13 @@ class Red:
         self.NPC = NPC
         self.Ncapas = len(NPC)   
 
-    
-        self.W = [ np.random.uniform( -1,1, (self.NPC[i+1], self.NPC[i])).astype(np.double) for i in range(self.Ncapas-1)]      
-        self.B = [ np.random.uniform( -1,1, (self.NPC[i+1], 1)          ).astype(np.double)  for i in range(self.Ncapas-1) ]
+        self.W = [ np.random.uniform( -1,1, (self.NPC[i+1], self.NPC[i]) ) for i in range(self.Ncapas-1)]      
+        self.B = [ np.random.uniform( -1,1, (self.NPC[i+1], 1)           ) for i in range(self.Ncapas-1) ]
 
-        self.dW = [ np.zeros((self.NPC[i+1], self.NPC[i]) ).astype(np.double)  for i in range(self.Ncapas-1)]
-        self.dB = [ np.zeros((self.NPC[i+1], 1)           ).astype(np.double)  for i in range(self.Ncapas-1) ]
+        self.dW = [ np.zeros((self.NPC[i+1], self.NPC[i]) )  for i in range(self.Ncapas-1)]
+        self.dB = [ np.zeros((self.NPC[i+1], 1)           ) for i in range(self.Ncapas-1) ]
 
-        self.E = 0
+        self.E = 1e10
     
     def Adelante(self, batch):
         # el batch es un conjunto de datos con forma (d, n),
@@ -43,11 +42,14 @@ class Red:
 
         self.E = tmp[0][0]
 
+
     def Atras(self, ideal, step):
         delta = []
         cantidad_datos = ideal.shape[1]
-        
-        for i in reversed(range(len(self.W))):
+        n_w = len(self.W)
+
+
+        for i in reversed( range( len(self.W) ) ):
             if i == len(self.W)-1:
                 delta = 2.*(self.A[i+1]-ideal)/float(cantidad_datos)
                 delta = delta*dAct(self.Z[i+1])
@@ -60,17 +62,10 @@ class Red:
 
                 self.dB[i] = np.sum(delta,1,keepdims=True)/float(cantidad_datos)
                 self.dW[i] = delta.dot(self.A[i].T)
-                
-
-            #print("delta: ", delta.shape,"  B: ", self.B[i].shape,"  dB: ", self.dB[i].shape)
             
             self.W[i] -= self.dW[i]*step
             self.B[i] -= self.dB[i]*step
             
-        
-        #print("===="*10)
-
-
     def EvaluarBatch(self, batch):
         batch = batch.T
         batch_size = batch.shape[1]
@@ -79,49 +74,59 @@ class Red:
 
         self.Adelante(batch)
 
+
         return self.A[-1]
 
     def Entrenar(self, entrada, salida, iteraciones, paso, tolerancia=1e-8, N_batch=1, print_cada = 1): 
-        
-        self.INPUT = entrada
-        self.SALIDA_IDEAL = salida
+        ## Esta es la funcion principal para entrenar la red. La entrada y salida son arrays de datos
+        ## donde cada fila es un dato nuevo. (al operar estos valores se trasponen).
 
-        random_state = np.random.get_state()
+        ## Guardando los datos originales.
+        self.INPUT = entrada
+        self.SALIDA = salida
+
+        ## Mezclamos los datos para que la red generalize mejor al
+        ## utilizar datos y reescalamos para que el máximo valore que tome
+        ## alguno de los nodos de entrada sea mayor que 1 (o menor a -1)
+        random_state = np.random.get_state() ## asi me aseguro que se desordenen correlacionadamente
         self.X, self.normx = Escalar(entrada)
         np.random.shuffle(self.X)
         np.random.set_state(random_state)
         self.Y, self.normy = Escalar(salida)
         np.random.shuffle(self.Y)
 
+        ## Creando los batches desde los datos mezclados
         self.mini_batches = np.array_split(self.X, N_batch)
-        self.mini_pred = np.array_split(self.Y, N_batch)
+        self.mini_ideal = np.array_split(self.Y, N_batch)
         self.N_batch = N_batch
-    
-        self.N_datos = self.X.shape[0] ## CADA FILA ES UN DATO
+        self.N_datos = self.X.shape[0] ## En este punto cada fila es un dato
 
         for iteracion in range(iteraciones):
             self.Z = []
             self.A = []
             
-            for batch, pred in zip(self.mini_batches, self.mini_pred):
-                batch = batch.T
-                pred = pred.T
+            # Cada iteracion pasa por todos los batches. Con cada uno se aplica
+            # la propagación hacia atras. (Descenso de Gradiente Estocastico)
+            for batch, ideal in zip(self.mini_batches, self.mini_ideal):
+                batch = batch.T     # ahora cada columna
+                ideal = ideal.T     # es un dato
                 batch_size = batch.shape[1]
                 self.Z = [ np.empty( (i, batch_size) ).astype(np.double)  for i in self.NPC ]
                 self.A = [ np.empty( (i, batch_size) ).astype(np.double)  for i in self.NPC ]
 
                 self.Adelante(batch)
-                self.Loss(pred)
-
-                if abs(self.E) < abs(tolerancia):
                 
+                self.Loss(ideal)
+
+                self.Atras(ideal, paso)
+
+                ## Mensaje en caso de que la tolerancia sea alcanzada.
+                if abs(self.E) < abs(tolerancia):
                     print("TOLERANCIA ALCANZADA")
                     print("Iteraciones: ", iteracion, ".  Error promedio : ", self.E)
                     print( "con tolerancia: ", tolerancia)
                     return
                 
-                self.Atras(pred, paso)
-
             ## Esta es la forma de visualizar el progreso dentro de la terminal
             if iteracion % print_cada == 0:
                 pass
@@ -131,6 +136,8 @@ class Red:
 ################################## Funciones miscelaneas ############################
 #####################################################################################
 
+
+## Funcion de activación. Actualmente no funciona ReLU :(
 tipo_default = "sigmoid"
 def Act(x, tipo=tipo_default):
     match tipo:
@@ -148,6 +155,9 @@ def dAct(x, tipo=tipo_default):
             return Act(x)*(1-Act(x))
 
 
+# Funcion que escala según el valor mas grande que se encuentre
+# en alguna de los componentes de los datos. De esta forma todos los nodos
+# de entrada, para cualquier dato, solo entrarán valores entre -1 y 1
 def Escalar(ndarray):
     maximo = np.max(ndarray)
-    return ndarray/float(maximo), maximo
+    return ndarray/maximo, maximo
