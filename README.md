@@ -12,3 +12,10 @@ tipo.
 En este repositorio se encuentran algunos ejemplos donde esta clase a cumplido 
 satifactoriamente su trabajo y se pretende que sirva como demostración de la fidelidad
 del programa que he escrito.
+
+El programa EntrenadorDigitos.ipynb es el Jupyter Notebook donde fue inicializada la red y posteriormente entenada.
+Los pesos utilizados fueron guardados utilizando pandas en los archivos .pkl.
+Luego en el archivo Demostracion.ipynb contiene una red que ha sido cargada con los pesos entrenados,
+utilizando el último bloque podemos testear la red con ejemplos que la red nunca ha visto.
+
+
